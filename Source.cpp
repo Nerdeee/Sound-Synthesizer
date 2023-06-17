@@ -7,6 +7,8 @@ using namespace std;
 atomic<double> dFrequencyOutput = 0.0;			// dominant output frequency of instrument, i.e. the note
 double dOctaveBaseFrequency = 110.0; // A2		// frequency of octave represented by keyboard
 double d12thRootOf2 = pow(2.0, 1.0 / 12.0);		// assuming western 12 notes per ocatve
+sEnvelopeADSR envelope;
+
 
 //converts frequency to angular velocity
 double w(double dHertz) {
@@ -19,7 +21,7 @@ double osc(double dHertz, double dTime, int nType) {
 		return sin(w(dHertz) * dTime);
 	case 1: // square wave
 		return sin(w(dHertz) * dTime) > 0.0 ? 1.0 : -1.0;
-	case 2:
+	case 2: // triangle wave
 		return asin(sin(w(dHertz) * dTime)) * 2.0 / PI;
 	case 3:
 		return (2.0 / PI) * (dHertz * PI * fmod(dTime, 1.0 / dHertz) - (PI / 2.0));
@@ -31,7 +33,7 @@ double osc(double dHertz, double dTime, int nType) {
 	
 }
 
-struct sEnevlopeADSR {
+struct sEnvelopeADSR {
 	double dAttackTime;
 	double dDecayTime;
 	double dReleaseTime;
@@ -42,16 +44,68 @@ struct sEnevlopeADSR {
 	double dTriggerOnTime;
 	double dTriggerOffTime;
 
-	
+	bool bNoteOn;
+
+	sEnvelopeADSR() {
+		dAttackTime = 0.100;
+		dDecayTime = 0.01;
+		dStartAmplitude = 1.0;
+		dSustainAmplitude = 0.8;
+		dReleaseTime = 0.200;
+		dTriggerOffTime = 0.0;
+		dTriggerOnTime = 0.0;
+		bNoteOn = false;
+	}
+
+	double GetAmplitude(double dTime) {
+		double dAmplitude = 0.0;
+		double dLifeTime = dTime - dTriggerOnTime;
+
+		if (bNoteOn) {
+
+			// attack
+			if (dLifeTime <= dAttackTime) dAmplitude = (dLifeTime / dAttackTime) * dStartAmplitude;
+		
+			// delay
+			if (dLifeTime > dAttackTime * dLifeTime <= (dAttackTime + dDecayTime))
+				dAmplitude = ((dLifeTime - dAttackTime) / dDecayTime) * (dSustainAmplitude - dStartAmplitude) + dStartAmplitude;
+		
+			// sustain
+			if (dLifeTime > (dAttackTime + dDecayTime)) {
+				dAmplitude = dSustainAmplitude;
+			}
+		}
+		else {
+			// release
+			dAmplitude = ((dTime - dTriggerOffTime) / dReleaseTime) * (0.0 - dSustainAmplitude) + dSustainAmplitude;
+		}
+
+		if (dAmplitude <= 0.0001) {
+			dAmplitude = 0.0;
+		}
+
+		return dAmplitude;
+	}
+
+	void NoteOn(double dTimeOn) {
+		dTriggerOnTime = dTimeOn;
+		bNoteOn = true;
+	}
+
+	void NoteOff(double dTimeOff) {
+		dTriggerOffTime = dTimeOff;
+		bNoteOn = false;
+	}
 };
 
 // Function used by olcNoiseMaker to generate sound waves
 // Returns amplitude (-1.0 to +1.0) as a function of time
 double MakeNoise(double dTime)
 {
-	double dOutput = osc(dFrequencyOutput, dTime, 0);
+	double dOutput = envelope.GetAmplitude(dTime) * osc(dFrequencyOutput, dTime, 0);
 	return dOutput * 0.4; // Master Volume
 }
+
 
 int main()
 {
@@ -92,6 +146,7 @@ int main()
 				if (nCurrentKey != k)
 				{
 					dFrequencyOutput = dOctaveBaseFrequency * pow(d12thRootOf2, k);
+					envelope.NoteOn(sound.GetTime());
 					wcout << "\rNote On : " << sound.GetTime() << "s " << dFrequencyOutput << "Hz";
 					nCurrentKey = k;
 				}
@@ -105,10 +160,9 @@ int main()
 			if (nCurrentKey != -1)
 			{
 				wcout << "\rNote Off: " << sound.GetTime() << "s                        ";
+				envelope.NoteOff(sound.GetTime());
 				nCurrentKey = -1;
 			}
-
-			dFrequencyOutput = 0.0;
 		}
 	}
 

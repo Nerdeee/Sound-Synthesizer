@@ -1,13 +1,13 @@
 #include <iostream>
+#include "olcNoiseMaker.h"
+
 using namespace std;
 
-#include "olcNoiseMaker.h"
 
 // Global synthesizer variables
 atomic<double> dFrequencyOutput = 0.0;			// dominant output frequency of instrument, i.e. the note
 double dOctaveBaseFrequency = 110.0; // A2		// frequency of octave represented by keyboard
 double d12thRootOf2 = pow(2.0, 1.0 / 12.0);		// assuming western 12 notes per ocatve
-sEnvelopeADSR envelope;
 
 
 //converts frequency to angular velocity
@@ -18,7 +18,7 @@ double w(double dHertz) {
 double osc(double dHertz, double dTime, int nType) {
 	switch (nType) {
 	case 0: // sin wave
-		return sin(w(dHertz) * dTime);
+		return sin(w(dHertz) * dTime + 0.5 * dHertz * sin(w(5.0) * dTime));
 	case 1: // square wave
 		return sin(w(dHertz) * dTime) > 0.0 ? 1.0 : -1.0;
 	case 2: // triangle wave
@@ -97,6 +97,8 @@ struct sEnvelopeADSR {
 		bNoteOn = false;
 	}
 };
+
+sEnvelopeADSR envelope;
 
 // Function used by olcNoiseMaker to generate sound waves
 // Returns amplitude (-1.0 to +1.0) as a function of time
